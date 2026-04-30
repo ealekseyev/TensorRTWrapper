@@ -1,0 +1,10 @@
+^C:\USERS\GIANT\ONEDRIVE\DOCUMENTS\GITHUB\TENSORRTWRAPPER\CMAKELISTS.TXT
+setlocal
+"C:\Program Files\CMake\bin\cmake.exe" -SC:/Users/giant/OneDrive/Documents/GitHub/tensorRTWrapper -BC:/Users/giant/OneDrive/Documents/GitHub/tensorRTWrapper/build --check-stamp-file C:/Users/giant/OneDrive/Documents/GitHub/tensorRTWrapper/build/CMakeFiles/generate.stamp
+if %errorlevel% neq 0 goto :cmEnd
+:cmEnd
+endlocal & call :cmErrorLevel %errorlevel% & goto :cmDone
+:cmErrorLevel
+exit /b %1
+:cmDone
+if %errorlevel% neq 0 goto :VCEnd

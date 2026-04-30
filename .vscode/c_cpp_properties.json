@@ -1,0 +1,17 @@
+{
+    "configurations": [
+        {
+            "name": "Win32",
+            "includePath": [
+                "${workspaceFolder}/lib/include",
+                "C:/nvidia/TensorRT-10.15.1.29/include",
+                "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.9/include"
+            ],
+            "defines": [],
+            "compilerPath": "C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Tools/MSVC/14.41.34120/bin/Hostx64/x64/cl.exe",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "windows-msvc-x64"
+        }
+    ],
+    "version": 4
+}

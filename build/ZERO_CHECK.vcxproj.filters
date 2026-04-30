@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <CustomBuild Include="C:\Users\giant\OneDrive\Documents\GitHub\tensorRTWrapper\build\CMakeFiles\0c0c9360b3ed587cd079c37d6d50948c\generate.stamp.rule">
+      <Filter>CMake Rules</Filter>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="CMake Rules">
+      <UniqueIdentifier>{5A29CA6D-70E5-31B2-A6CE-83904AD25724}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>
