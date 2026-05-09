@@ -57,6 +57,10 @@ InferenceEngine::~InferenceEngine() {
 
     this->_inference_thread.join();
         cout << "joining...\n";
+
+    delete this->_engine;
+    delete this->_context;
+    delete this->_runtime;
 }
 
 void InferenceEngine::load_model(const std::string& path) {
