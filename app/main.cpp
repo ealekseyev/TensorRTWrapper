@@ -1,14 +1,9 @@
 #include "inference_engine.hpp"
-#include "viewer.hpp"
-
-#define STB_IMAGE_IMPLEMENTATION
-#include "stb_image.h"
+#include "image_utils.hpp"
 
 #include <algorithm>
-#include <cstdint>
 #include <iomanip>
 #include <iostream>
-#include <memory>
 #include <filesystem>
 #include <chrono>
 #include <stdexcept>
@@ -16,112 +11,6 @@
 #include <vector>
 
 namespace {
-
-struct ImageCHW {
-    std::shared_ptr<std::uint8_t[]> data;
-    int channels;
-    int height;
-    int width;
-};
-
-ImageCHW load_image_chw(const std::string& path) {
-    int width = 0;
-    int height = 0;
-    int channels_in_file = 0;
-    stbi_uc* hwc = stbi_load(path.c_str(), &width, &height, &channels_in_file, 3);
-    if (!hwc) {
-        throw std::runtime_error(
-            "Failed to load image \"" + path + "\": " + stbi_failure_reason());
-    }
-
-    const std::size_t plane_size = static_cast<std::size_t>(height) * width;
-    std::shared_ptr<std::uint8_t[]> chw(new std::uint8_t[plane_size * 3],
-                                        std::default_delete<std::uint8_t[]>());
-
-    for (int y = 0; y < height; ++y) {
-        for (int x = 0; x < width; ++x) {
-            const std::size_t hwc_idx = static_cast<std::size_t>(y) * width * 3 + x * 3;
-            const std::size_t chw_idx = static_cast<std::size_t>(y) * width + x;
-            chw[chw_idx] = hwc[hwc_idx];
-            chw[plane_size + chw_idx] = hwc[hwc_idx + 1];
-            chw[(plane_size * 2) + chw_idx] = hwc[hwc_idx + 2];
-        }
-    }
-
-    stbi_image_free(hwc);
-    return {std::move(chw), 3, height, width};
-}
-
-std::shared_ptr<std::uint8_t[]> resize_to_640x640_padded(const std::uint8_t* input_chw,
-                                                         int input_height,
-                                                         int input_width) {
-    if (!input_chw) {
-        throw std::invalid_argument("resize_to_640x640_padded received a null image");
-    }
-    if (input_height <= 0 || input_width <= 0) {
-        throw std::invalid_argument("resize_to_640x640_padded requires positive dimensions");
-    }
-
-    constexpr int kChannels = 3;
-    constexpr int kTargetSize = 640;
-    const std::size_t output_plane_size = static_cast<std::size_t>(kTargetSize) * kTargetSize;
-
-    std::shared_ptr<std::uint8_t[]> output(new std::uint8_t[output_plane_size * kChannels](),
-                                           std::default_delete<std::uint8_t[]>());
-
-    const float scale = std::min(static_cast<float>(kTargetSize) / input_width,
-                                 static_cast<float>(kTargetSize) / input_height);
-    const int resized_width = std::max(1, static_cast<int>(input_width * scale));
-    const int resized_height = std::max(1, static_cast<int>(input_height * scale));
-    const int pad_x = (kTargetSize - resized_width) / 2;
-    const int pad_y = (kTargetSize - resized_height) / 2;
-
-    const std::size_t input_plane_size = static_cast<std::size_t>(input_height) * input_width;
-
-    for (int c = 0; c < kChannels; ++c) {
-        const std::uint8_t* src_plane = input_chw + (static_cast<std::size_t>(c) * input_plane_size);
-        std::uint8_t* dst_plane = output.get() + (static_cast<std::size_t>(c) * output_plane_size);
-
-        for (int y = 0; y < resized_height; ++y) {
-            const float src_y = (static_cast<float>(y) + 0.5f) / scale - 0.5f;
-            const int y0 = std::clamp(static_cast<int>(src_y), 0, input_height - 1);
-            const int y1 = std::min(y0 + 1, input_height - 1);
-            const float wy = src_y - y0;
-
-            for (int x = 0; x < resized_width; ++x) {
-                const float src_x = (static_cast<float>(x) + 0.5f) / scale - 0.5f;
-                const int x0 = std::clamp(static_cast<int>(src_x), 0, input_width - 1);
-                const int x1 = std::min(x0 + 1, input_width - 1);
-                const float wx = src_x - x0;
-
-                const float top = src_plane[static_cast<std::size_t>(y0) * input_width + x0] * (1.0f - wx) +
-                                  src_plane[static_cast<std::size_t>(y0) * input_width + x1] * wx;
-                const float bottom = src_plane[static_cast<std::size_t>(y1) * input_width + x0] * (1.0f - wx) +
-                                     src_plane[static_cast<std::size_t>(y1) * input_width + x1] * wx;
-                const float value = top * (1.0f - wy) + bottom * wy;
-
-                const int out_y = y + pad_y;
-                const int out_x = x + pad_x;
-                dst_plane[static_cast<std::size_t>(out_y) * kTargetSize + out_x] =
-                    static_cast<std::uint8_t>(std::clamp(value, 0.0f, 255.0f));
-            }
-        }
-    }
-
-    return output;
-}
-
-std::vector<float> chw_u8_to_float_input(const std::uint8_t* input_chw, std::size_t element_count) {
-    if (!input_chw) {
-        throw std::invalid_argument("chw_u8_to_float_input received a null image");
-    }
-
-    std::vector<float> input(element_count);
-    for (std::size_t i = 0; i < element_count; ++i) {
-        input[i] = static_cast<float>(input_chw[i]) / 255.0f;
-    }
-    return input;
-}
 
 std::vector<Detection> parse_yolo_detections(const std::vector<float>& output) {
     constexpr int kDetections = 8400;
@@ -163,20 +52,9 @@ std::vector<Detection> parse_yolo_detections(const std::vector<float>& output) {
     return detections;
 }
 
-YoloBBox to_corner_box(const YoloBBox& bbox) {
-    const float half_w = bbox.x2 * 0.5f;
-    const float half_h = bbox.y2 * 0.5f;
-    return {
-        bbox.x1 - half_w,
-        bbox.y1 - half_h,
-        bbox.x1 + half_w,
-        bbox.y1 + half_h,
-    };
-}
-
 float intersection_over_union(const YoloBBox& lhs, const YoloBBox& rhs) {
-    const YoloBBox a = to_corner_box(lhs);
-    const YoloBBox b = to_corner_box(rhs);
+    const YoloBBox a = yolo_bbox_to_corners(lhs);
+    const YoloBBox b = yolo_bbox_to_corners(rhs);
 
     const float inter_x1 = std::max(a.x1, b.x1);
     const float inter_y1 = std::max(a.y1, b.y1);
@@ -254,16 +132,16 @@ double benchmark(InferenceEngine& engine, const std::vector<float>& input_image,
         throw std::invalid_argument("benchmark requires at least one iteration");
     }
 
-    std::vector<std::shared_ptr<InferenceResult>> pending_results;
+    std::vector<InferenceFuture> pending_results;
     pending_results.reserve(iterations);
 
     const auto start = std::chrono::steady_clock::now();
     for (std::size_t i = 0; i < iterations; ++i) {
-        pending_results.push_back(engine.enqueue(std::vector<float>(input_image)));
+        pending_results.push_back(engine.submit(std::vector<float>(input_image)));
     }
 
     for (auto& result : pending_results) {
-        result->wait();
+        result.get();
     }
 
     const auto end = std::chrono::steady_clock::now();
@@ -279,7 +157,7 @@ double benchmark(InferenceEngine& engine, const std::vector<float>& input_image,
     return fps;
 }
 
-}  // namespace
+}
 
 int main(int argc, char** argv) {
     try {
@@ -295,27 +173,23 @@ int main(int argc, char** argv) {
 
         InferenceEngine engine;
         engine.load_model("models/trt/model.trt");
-        engine.start();
 
         if (engine.inputs().empty()) {
             throw std::runtime_error("Model exposes no input tensors");
         }
 
         const std::size_t input_elements = kModelInputElements;
-        if (engine.inputs()[0].bytes / sizeof(float) < input_elements) {
+        if (engine.inputs()[0].sample_elements < input_elements) {
             throw std::runtime_error("Model input tensor is smaller than 3x640x640 floats");
         }
-        std::vector<std::vector<float>> model_inputs;
         const std::vector<float> input_image = chw_u8_to_float_input(resized.get(), input_elements);
+        TensorList model_inputs;
         model_inputs.push_back(input_image);
 
         std::cout << "Loaded image: " << image_path << " (" << image.width << "x" << image.height
                   << "), resized to 3x640x640\n";
 
-        auto result = engine.enqueue(std::move(model_inputs));
-        result->wait();
-
-        const auto& outputs = result->data();
+        const TensorList outputs = engine.infer(std::move(model_inputs));
         if (outputs.empty()) {
             throw std::runtime_error("Inference produced no output tensors");
         }
